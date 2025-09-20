@@ -1,10 +1,19 @@
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
+import os
+import mimetypes
+from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional
 from main import create_agent_with_memory
 from session_manager import session_manager
+
+# Ensure correct MIME types are registered
+mimetypes.add_type('text/css', '.css')
+mimetypes.add_type('application/javascript', '.js')
 
 app = FastAPI(title="Kheti - Agricultural AI Assistant", description="AI-powered agricultural assistant for Indian farmers")
 
@@ -15,6 +24,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files FIRST (before route definitions)
+static_dir = Path(__file__).parent / "frontend" / "dist"
+if static_dir.exists():
+    # Mount the entire dist directory to serve all static files
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+    # Also mount any other static files from dist root
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 class ChatRequest(BaseModel):
     text: str
@@ -66,9 +83,31 @@ async def get_session_stats():
         "max_sessions": session_manager.max_sessions
     }
 
+# Frontend routes (using static_dir defined at the top)
+@app.get("/")
+async def serve_frontend():
+    """Serve the React frontend"""
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    return {"message": "Frontend not built. Run: cd frontend && npm run build"}
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "Kheti - Agricultural AI Assistant"}
+
+# Catch-all route for React Router (SPA routing) - MUST be last
+@app.get("/{path:path}")
+async def serve_spa(path: str):
+    """Serve React app for any unmatched routes (SPA routing)"""
+    # Skip API routes - assets are handled by mount above
+    if path.startswith(("chat", "health")):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    return {"message": "Frontend not built. Run: cd frontend && npm run build"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

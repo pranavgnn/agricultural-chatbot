@@ -8,8 +8,6 @@ import {
   Calculator,
   Droplets,
   Bug,
-  TrendingUp,
-  Zap,
 } from "lucide-react";
 
 interface SuggestionQueriesProps {
