@@ -10,7 +10,7 @@ try:
 except ImportError:
     pass
 
-model = init_chat_model("gemini-2.5-flash-lite", model_provider="google_genai")
+model = init_chat_model("gemini-2.5-flash", model_provider="google_genai")
 
 llm_with_tools = model.bind_tools(tools)
 
@@ -30,7 +30,6 @@ def create_agent_with_memory(memory: ConversationBufferWindowMemory) -> AgentExe
         handle_parsing_errors=True
     )
 
-# For backward compatibility - create a default agent without memory
 agent = create_tool_calling_agent(
     llm=llm_with_tools,
     prompt=prompt,
