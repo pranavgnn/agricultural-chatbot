@@ -10,11 +10,12 @@ def plant_information(plant_name: str):
     Args:
     plant_name (str): Name of the plant to search for.
     """
+    
     search_query = f"{plant_name} plant information in India"
 
     search_results = search.run(search_query)
 
     if not search_results:
-        return "माफ़ करें, जानकारी उपलब्ध नहीं है।"
+        return "Sorry, information not available."
     
     return search_results

@@ -22,11 +22,11 @@ def weather_data(district_name: str):
     )
 
     if response.status_code != 200:
-        return "माफ़ करें, मौसम डेटा उपलब्ध नहीं है।"
+        return "Sorry, information not available."
     
     data = response.json()
 
     if "error" in data:
-        return "माफ़ करें, मौसम डेटा उपलब्ध नहीं है।"
+        return "Sorry, information not available."
     
     return json.dumps(data)

@@ -21,6 +21,6 @@ agent = create_tool_calling_agent(
 
 agent_executor = AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=True)
 
-response = agent_executor.invoke({"text": "what conditions and soil i can grow cotton in"})
+response = agent_executor.invoke({"text": "what is a good crop insurance i can get in rajasthan?"})
 
 print(response["output"])

@@ -13,6 +13,6 @@ def government_scheme_data(scheme_name: str):
 
     scheme_info = schemes.get(scheme_name)
     if not scheme_info:
-        return "माफ़ करें, जानकारी उपलब्ध नहीं है।"
+        return "Sorry, information not available."
     
     return scheme_info
