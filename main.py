@@ -21,6 +21,7 @@ agent = create_tool_calling_agent(
 
 agent_executor = AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=True)
 
-response = agent_executor.invoke({"text": "which is the best crop to sow in rajasthan in the month of july?"})
+if __name__ == "__main__":
+    response = agent_executor.invoke({"text": "which is the best crop to sow in rajasthan in the month of july?"})
 
-print(response["output"])
+    print(response["output"])
