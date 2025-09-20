@@ -437,11 +437,11 @@ crop_data = {
 }
 
 @tool
-def crop_calendar(state_name: str = "Rajasthan"):
+def crop_calendar(state_name: str):
     """
-    Provides the crop calendar for a given state in India. If state name is not provided, it defaults to "Rajasthan".
+    Provides the crop calendar for a given state in India.
     Args:
-        state_name (str): Name of the state in India. Default is "Rajasthan".
+        state_name (str): Name of the state in India. Must be Title Case.
     """
 
     state_name = state_name.strip().title()

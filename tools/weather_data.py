@@ -4,13 +4,13 @@ import json
 import os
 
 @tool
-def weather_data(district_name: str):
+def weather_data(location_name: str):
     """
-    Fetch weather data for a given district in Rajasthan using WeatherAPI.
-    Returns a JSON string with weather details or an error message in Hindi.
+    Fetch weather data for any location worldwide using WeatherAPI.
+    Returns a JSON string with weather details or an error message.
 
     Args:
-    district_name (str): Name of the district in Rajasthan.
+    location_name (str): Name of the city, district, state, or country (e.g., "Mumbai", "Delhi", "Rajasthan", "New York").
     """
 
     api_key = os.getenv("WEATHERAPI_KEY")
@@ -18,7 +18,7 @@ def weather_data(district_name: str):
         return "Weather API key not configured."
     
     response = requests.get(
-        f"http://api.weatherapi.com/v1/current.json?key={api_key}&q={district_name}&aqi=no"
+        f"http://api.weatherapi.com/v1/current.json?key={api_key}&q={location_name}&aqi=no"
     )
 
     if response.status_code != 200:
