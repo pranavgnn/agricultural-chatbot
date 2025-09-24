@@ -10,5 +10,7 @@ from .seed_calculator import seed_requirement_calculator
 from .irrigation_calculator import irrigation_calculator
 from .pesticide_calculator import pesticide_dilution_calculator
 from .profitability_calculator import profitability_calculator
+from .helpline_numbers import helpline_numbers
+from .govt_offices import govt_offices
 
-tools = [search, weather_data, government_scheme_data, all_government_schemes, plant_information, crop_calendar, mandi_prices, fertilizer_dosage_calculator, seed_requirement_calculator, irrigation_calculator, pesticide_dilution_calculator, profitability_calculator]
+tools = [search, weather_data, government_scheme_data, all_government_schemes, plant_information, crop_calendar, mandi_prices, fertilizer_dosage_calculator, seed_requirement_calculator, irrigation_calculator, pesticide_dilution_calculator, profitability_calculator, helpline_numbers, govt_offices]
