@@ -52,53 +52,57 @@ export function ChatInterface() {
   // Initialize speech recognition
   useEffect(() => {
     // Check if browser supports Web Speech API
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = false;
-      recognition.lang = 'en-IN'; // English (India), supports code-switching with Hindi
-      
+      recognition.lang = "en-IN"; // English (India), supports code-switching with Hindi
+
       recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         setInput(transcript);
         setIsRecording(false);
         toast.success("Speech recognized!");
-        
+
         // Automatically send the transcribed message
         setTimeout(() => {
           sendMessage(transcript);
         }, 100);
       };
-      
+
       recognition.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error);
         setIsRecording(false);
-        
-        if (event.error === 'no-speech') {
+
+        if (event.error === "no-speech") {
           toast.error("No speech detected. Please try again.");
-        } else if (event.error === 'not-allowed') {
+        } else if (event.error === "not-allowed") {
           toast.error("Microphone access denied. Please grant permission.");
         } else {
           toast.error("Speech recognition failed. Please try again.");
         }
       };
-      
+
       recognition.onend = () => {
         setIsRecording(false);
       };
-      
+
       recognitionRef.current = recognition;
     }
   }, []);
 
   const startRecording = () => {
     if (!recognitionRef.current) {
-      toast.error("Speech recognition not supported in this browser. Try Chrome or Edge.");
+      toast.error(
+        "Speech recognition not supported in this browser. Try Chrome or Edge."
+      );
       return;
     }
-    
+
     try {
       recognitionRef.current.start();
       setIsRecording(true);
@@ -471,7 +475,7 @@ export function ChatInterface() {
                 className="pr-12 h-12 rounded-full border-border/40 bg-background/50 backdrop-blur-sm"
               />
             </div>
-            
+
             {/* Microphone Button */}
             <Button
               type="button"
@@ -490,7 +494,7 @@ export function ChatInterface() {
                 <Mic className="h-4 w-4" />
               )}
             </Button>
-            
+
             {/* Send Button */}
             <Button
               type="submit"
