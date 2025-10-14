@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, Bot, User, RotateCcw } from "lucide-react";
+import { Send, Loader2, Bot, User, RotateCcw, Mic, MicOff } from "lucide-react";
 import { toast } from "sonner";
 import { SuggestionQueries } from "@/components/suggestion-queries";
 import ReactMarkdown from "react-markdown";
@@ -20,7 +20,9 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -46,6 +48,73 @@ export function ChatInterface() {
 
     initializeSession();
   }, []);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    // Check if browser supports Web Speech API
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-IN'; // English (India), supports code-switching with Hindi
+      
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setIsRecording(false);
+        toast.success("Speech recognized!");
+        
+        // Automatically send the transcribed message
+        setTimeout(() => {
+          sendMessage(transcript);
+        }, 100);
+      };
+      
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+        setIsRecording(false);
+        
+        if (event.error === 'no-speech') {
+          toast.error("No speech detected. Please try again.");
+        } else if (event.error === 'not-allowed') {
+          toast.error("Microphone access denied. Please grant permission.");
+        } else {
+          toast.error("Speech recognition failed. Please try again.");
+        }
+      };
+      
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+      
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const startRecording = () => {
+    if (!recognitionRef.current) {
+      toast.error("Speech recognition not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+    
+    try {
+      recognitionRef.current.start();
+      setIsRecording(true);
+      toast.info("Listening... Speak now!");
+    } catch (error) {
+      console.error("Error starting recognition:", error);
+      toast.error("Failed to start speech recognition.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+  };
 
   const sendMessage = async (messageText: string = input) => {
     if (!messageText.trim() || isLoading) return;
@@ -398,13 +467,34 @@ export function ChatInterface() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about crops, weather, schemes..."
-                disabled={isLoading}
+                disabled={isLoading || isRecording}
                 className="pr-12 h-12 rounded-full border-border/40 bg-background/50 backdrop-blur-sm"
               />
             </div>
+            
+            {/* Microphone Button */}
+            <Button
+              type="button"
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isLoading}
+              size="icon"
+              className={`h-12 w-12 rounded-full ${
+                isRecording
+                  ? "bg-red-500 hover:bg-red-600 animate-pulse"
+                  : "bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+              }`}
+            >
+              {isRecording ? (
+                <MicOff className="h-4 w-4" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
+            </Button>
+            
+            {/* Send Button */}
             <Button
               type="submit"
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || !input.trim() || isRecording}
               size="icon"
               className="h-12 w-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
             >
