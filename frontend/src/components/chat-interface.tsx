@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, Bot, User, RotateCcw, Mic, MicOff } from "lucide-react";
+import { Send, Loader2, Bot, User, Mic, MicOff, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { SuggestionQueries } from "@/components/suggestion-queries";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useParams } from "react-router";
+import { authenticatedFetch } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 interface Message {
   id: string;
@@ -14,15 +17,27 @@ interface Message {
   timestamp: Date;
 }
 
-export function ChatInterface() {
+interface ChatInterfaceProps {
+  onNewSession?: (sessionId: string, shouldNavigate?: boolean) => void;
+}
+
+export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(false); // Loading session from DB
+  const [isBotThinking, setIsBotThinking] = useState(false); // Bot is generating response
   const [showSuggestions, setShowSuggestions] = useState(true);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const { sessionId } = useParams();
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(
+    sessionId || null
+  );
+  const [isPublicSession, setIsPublicSession] = useState(false);
+  const [hasForked, setHasForked] = useState(false);
+  const [skipNextLoad, setSkipNextLoad] = useState(false); // Skip loading after fork
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -32,21 +47,145 @@ export function ChatInterface() {
     scrollToBottom();
   }, [messages]);
 
-  // Initialize session on component mount
+  // Check if user is logged in
   useEffect(() => {
-    const initializeSession = async () => {
-      try {
-        const response = await fetch("/chat/new-session", {
-          method: "POST",
-        });
-        const data = await response.json();
-        setSessionId(data.session_id);
-      } catch (error) {
-        console.error("Failed to initialize session:", error);
-      }
+    const checkAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setIsLoggedIn(!!session);
     };
+    checkAuth();
 
-    initializeSession();
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Load session messages when sessionId changes
+  useEffect(() => {
+    if (skipNextLoad) {
+      console.log("Skipping load after fork");
+      setSkipNextLoad(false);
+      return;
+    }
+
+    if (sessionId) {
+      setCurrentSessionId(sessionId);
+      // Show loading state immediately
+      setShowSuggestions(false);
+      loadSessionMessages(sessionId);
+    } else {
+      // No session selected, show suggestions
+      setMessages([]);
+      setShowSuggestions(true);
+      setCurrentSessionId(null);
+    }
+  }, [sessionId]);
+
+  const loadSessionMessages = async (sid: string) => {
+    // Don't try to load temporary sessions from the server
+    if (sid.startsWith("temp-") || sid.startsWith("anon-")) {
+      setMessages([]);
+      setShowSuggestions(true);
+      setIsPublicSession(false);
+      return;
+    }
+
+    // Show skeleton/loading state
+    setIsLoadingSession(true);
+
+    try {
+      // Try to load session (works for both public and private sessions)
+      const response = await authenticatedFetch(`/chat/sessions/${sid}`).catch(
+        (error) => {
+          console.log(
+            "Authenticated fetch failed, trying anonymous fetch:",
+            error
+          );
+          // If authenticated fetch fails, try anonymous fetch (for public sessions)
+          return fetch(`/chat/sessions/${sid}`, {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+        }
+      );
+
+      console.log("Session fetch response:", response.status, response.ok);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Failed to load session:", response.status, errorText);
+
+        // If it's a 403, show error that session is private
+        if (response.status === 403) {
+          toast.error("This chat is private. Please sign in to view.");
+        } else if (response.status === 404) {
+          toast.error("Chat not found.");
+        }
+
+        // If session not found or access denied, show homepage
+        console.warn("Session not accessible, showing homepage");
+        setMessages([]);
+        setShowSuggestions(true);
+        setCurrentSessionId(null);
+        setIsPublicSession(false);
+        return;
+      }
+
+      const data = await response.json();
+      console.log("Session data loaded:", data);
+
+      // Check if this is a public session that we don't own
+      const {
+        data: { session: currentSession },
+      } = await supabase.auth.getSession();
+      const userId = currentSession?.user?.id || null;
+
+      const isPublic = data.session.is_public;
+      const ownerId = data.session.user_id;
+      const isOwner = userId && ownerId === userId;
+
+      console.log("Session check:", { userId, ownerId, isPublic, isOwner });
+
+      setIsPublicSession(isPublic && !isOwner);
+      setHasForked(false);
+
+      const loadedMessages: Message[] = data.messages.map(
+        (msg: any, index: number) => ({
+          id: `${sid}-${index}`,
+          content: msg.content,
+          isUser: msg.role === "user",
+          timestamp: new Date(msg.created_at),
+        })
+      );
+
+      setMessages(loadedMessages);
+      setShowSuggestions(loadedMessages.length === 0);
+    } catch (error) {
+      console.error("Error loading session (network/parsing error):", error);
+      toast.error("Failed to load chat. Please check your connection.");
+      // On network errors, keep current state but show error
+      // Don't reset to homepage unless the server explicitly said so
+    } finally {
+      setIsLoadingSession(false);
+    }
+  };
+
+  // Initialize session on component mount (only if no sessionId from route)
+  useEffect(() => {
+    if (!sessionId && !currentSessionId) {
+      // Don't auto-create session, wait for first message
+      setShowSuggestions(true);
+    }
   }, []);
 
   // Initialize speech recognition
@@ -121,10 +260,12 @@ export function ChatInterface() {
   };
 
   const sendMessage = async (messageText: string = input) => {
-    if (!messageText.trim() || isLoading) return;
+    if (!messageText.trim() || isBotThinking) return;
 
     console.log("Sending message:", messageText.trim());
-    console.log("Session ID:", sessionId);
+    console.log("Current session ID:", currentSessionId);
+    console.log("Is public session:", isPublicSession);
+    console.log("Has forked:", hasForked);
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -135,37 +276,107 @@ export function ChatInterface() {
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-    setIsLoading(true);
+    setIsBotThinking(true);
     setShowSuggestions(false);
 
     try {
+      // If this is a public session we don't own, fork it silently before sending
+      let sessionToUse = currentSessionId;
+
+      if (isPublicSession && !hasForked && currentSessionId) {
+        console.log("Forking public session silently...");
+
+        try {
+          const forkResponse = await authenticatedFetch(
+            `/chat/sessions/${currentSessionId}/fork`,
+            { method: "POST" }
+          ).catch(async (error) => {
+            console.log("Authenticated fork failed, trying anonymous:", error);
+            return fetch(`/chat/sessions/${currentSessionId}/fork`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+          });
+
+          console.log(
+            "Fork response status:",
+            forkResponse.status,
+            forkResponse.ok
+          );
+
+          if (forkResponse.ok) {
+            const forkData = await forkResponse.json();
+            console.log("Fork successful:", forkData);
+            sessionToUse = forkData.session_id;
+
+            // Update state silently
+            setCurrentSessionId(forkData.session_id);
+            setIsPublicSession(false);
+            setHasForked(true);
+            setSkipNextLoad(true); // Don't reload when URL changes
+
+            // Update URL without reload
+            window.history.replaceState({}, "", `/chat/${forkData.session_id}`);
+
+            // Notify parent to refresh sidebar WITHOUT navigating
+            if (onNewSession) {
+              onNewSession(forkData.session_id, false);
+            }
+
+            console.log("Forked to new session:", forkData.session_id);
+          } else {
+            const errorText = await forkResponse.text();
+            console.error(
+              "Fork failed with status:",
+              forkResponse.status,
+              errorText
+            );
+          }
+        } catch (forkError) {
+          console.error("Fork failed with exception:", forkError);
+          // Continue with original session if fork fails
+        }
+      }
+
       const requestBody = {
         text: messageText.trim(),
-        session_id: sessionId,
+        session_id: sessionToUse || undefined,
       };
 
       console.log("Request body:", requestBody);
 
-      const response = await fetch("/chat", {
+      // Use authenticated fetch if user is logged in, otherwise regular fetch
+      const response = await authenticatedFetch("/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(requestBody),
+      }).catch(() => {
+        // If authenticated fetch fails (no auth), try regular fetch for anonymous
+        return fetch("/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        });
       });
 
       console.log("Response status:", response.status);
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Error response:", errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
       console.log("Response data:", data);
 
-      // Update session ID if it changed
-      if (data.session_id && data.session_id !== sessionId) {
-        setSessionId(data.session_id);
+      // Update session ID if it changed (new session created)
+      if (data.session_id && data.session_id !== currentSessionId) {
+        setCurrentSessionId(data.session_id);
+        if (onNewSession) {
+          onNewSession(data.session_id);
+        }
       }
 
       const botMessage: Message = {
@@ -190,33 +401,7 @@ export function ChatInterface() {
       setMessages((prev) => [...prev, errorMessage]);
       toast.error("Failed to send message. Please check your connection.");
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const clearSession = async () => {
-    if (!sessionId) return;
-
-    try {
-      await fetch(`/chat/session/${sessionId}`, {
-        method: "DELETE",
-      });
-
-      // Reset the chat
-      setMessages([]);
-      setShowSuggestions(true);
-
-      // Initialize new session
-      const response = await fetch("/chat/new-session", {
-        method: "POST",
-      });
-      const data = await response.json();
-      setSessionId(data.session_id);
-
-      toast.success("Chat session cleared!");
-    } catch (error) {
-      console.error("Failed to clear session:", error);
-      toast.error("Failed to clear session.");
+      setIsBotThinking(false);
     }
   };
 
@@ -230,43 +415,43 @@ export function ChatInterface() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border/40 bg-background/80 backdrop-blur-sm">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                <Bot className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">Kheti</h1>
-                <p className="text-xs text-muted-foreground">
-                  {messages.length > 0
-                    ? `${messages.length} messages in this conversation`
-                    : "Your Agricultural AI Assistant"}
+    <div className="flex flex-col h-full bg-background">
+      {/* Public Session Banner - positioned after sidebar for logged-in users, full width for guests */}
+      {isPublicSession && !hasForked && (
+        <div
+          className={`fixed top-14 ${
+            isLoggedIn ? "left-56" : "left-0"
+          } right-0 z-40 bg-primary/10 border-b border-primary/20 px-4 py-2.5`}
+        >
+          <div className="max-w-4xl mx-auto flex items-center gap-2">
+            <Eye className="h-4 w-4 text-primary flex-shrink-0" />
+            <p className="text-sm text-foreground">
+              <strong>Viewing public chat.</strong> Send a message to create
+              your own copy and continue the conversation.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Messages Area */}
+      <div
+        className={`flex-1 overflow-hidden ${
+          isPublicSession && !hasForked ? "pt-[8.5rem]" : "pt-14"
+        }`}
+      >
+        {isLoadingSession ? (
+          // Loading skeleton while fetching messages from database
+          <div className="h-full overflow-y-auto">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                <p className="text-sm text-muted-foreground mt-4">
+                  Loading chat...
                 </p>
               </div>
             </div>
-
-            {messages.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearSession}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                New Chat
-              </Button>
-            )}
           </div>
-        </div>
-      </div>
-
-      {/* Messages Area */}
-      <div className="flex-1 overflow-hidden">
-        {showSuggestions && messages.length === 0 ? (
+        ) : showSuggestions && messages.length === 0 ? (
           <div className="h-full overflow-y-auto">
             <div className="max-w-4xl mx-auto px-6 py-8">
               <SuggestionQueries onQueryClick={handleSuggestionClick} />
@@ -274,13 +459,15 @@ export function ChatInterface() {
           </div>
         ) : (
           <div className="h-full overflow-y-auto">
-            <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-4">
               {messages.length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                    <Bot className="h-8 w-8 text-white" />
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary flex items-center justify-center">
+                    <Bot className="h-8 w-8 text-primary-foreground" />
                   </div>
-                  <h3 className="text-lg font-medium mb-2">Welcome to Kheti</h3>
+                  <h3 className="text-lg font-medium mb-2 text-foreground">
+                    Welcome to Kheti
+                  </h3>
                   <p className="text-muted-foreground">
                     Ask me anything about agriculture in India
                   </p>
@@ -290,29 +477,27 @@ export function ChatInterface() {
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex gap-4 ${
+                  className={`flex gap-3 ${
                     message.isUser ? "flex-row-reverse" : ""
                   }`}
                 >
                   <div className="flex-shrink-0">
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        message.isUser
-                          ? "bg-accent"
-                          : "bg-gradient-to-br from-green-500 to-emerald-600"
+                        message.isUser ? "bg-accent" : "bg-primary"
                       }`}
                     >
                       {message.isUser ? (
                         <User className="h-4 w-4 text-accent-foreground" />
                       ) : (
-                        <Bot className="h-4 w-4 text-white" />
+                        <Bot className="h-4 w-4 text-primary-foreground" />
                       )}
                     </div>
                   </div>
 
-                  <div className="flex-1 max-w-[80%]">
+                  <div className="flex-1 max-w-[85%]">
                     <div
-                      className={`rounded-2xl px-4 py-3 ${
+                      className={`rounded-lg px-4 py-2.5 ${
                         message.isUser
                           ? "bg-accent text-accent-foreground ml-auto"
                           : "bg-muted"
@@ -435,18 +620,18 @@ export function ChatInterface() {
                 </div>
               ))}
 
-              {/* Loading indicator */}
-              {isLoading && (
-                <div className="flex gap-4">
+              {/* Bot thinking indicator */}
+              {isBotThinking && (
+                <div className="flex gap-3">
                   <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                      <Bot className="h-4 w-4 text-white" />
+                    <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                      <Bot className="h-4 w-4 text-primary-foreground" />
                     </div>
                   </div>
-                  <div className="flex-1 max-w-[80%]">
-                    <div className="bg-muted rounded-2xl px-4 py-3">
+                  <div className="flex-1 max-w-[85%]">
+                    <div className="bg-muted rounded-lg px-4 py-2.5">
                       <div className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">
                           Thinking...
                         </span>
@@ -463,16 +648,16 @@ export function ChatInterface() {
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border/40 bg-background/80 backdrop-blur-sm">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <form onSubmit={handleSubmit} className="flex gap-3">
+      <div className="border-t border-border bg-card">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
+          <form onSubmit={handleSubmit} className="flex gap-2">
             <div className="flex-1 relative">
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about crops, weather, schemes..."
-                disabled={isLoading || isRecording}
-                className="pr-12 h-12 rounded-full border-border/40 bg-background/50 backdrop-blur-sm"
+                disabled={isBotThinking || isRecording}
+                className="h-11 rounded-lg"
               />
             </div>
 
@@ -480,12 +665,11 @@ export function ChatInterface() {
             <Button
               type="button"
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={isLoading}
+              disabled={isBotThinking}
               size="icon"
-              className={`h-12 w-12 rounded-full ${
-                isRecording
-                  ? "bg-red-500 hover:bg-red-600 animate-pulse"
-                  : "bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+              variant={isRecording ? "destructive" : "secondary"}
+              className={`h-11 w-11 rounded-lg ${
+                isRecording ? "animate-pulse" : ""
               }`}
             >
               {isRecording ? (
@@ -498,11 +682,11 @@ export function ChatInterface() {
             {/* Send Button */}
             <Button
               type="submit"
-              disabled={isLoading || !input.trim() || isRecording}
+              disabled={isBotThinking || !input.trim() || isRecording}
               size="icon"
-              className="h-12 w-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+              className="h-11 w-11 rounded-lg"
             >
-              {isLoading ? (
+              {isBotThinking ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Send className="h-4 w-4" />
