@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { SuggestionQueries } from "@/components/suggestion-queries";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useParams } from "react-router";
+import { useParams, useNavigate } from "react-router";
 import { authenticatedFetch } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
@@ -24,8 +24,8 @@ interface ChatInterfaceProps {
 export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isLoadingSession, setIsLoadingSession] = useState(false); // Loading session from DB
-  const [isBotThinking, setIsBotThinking] = useState(false); // Bot is generating response
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [isBotThinking, setIsBotThinking] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -34,14 +34,14 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const { sessionId } = useParams();
+  const navigate = useNavigate();
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(
     sessionId || null
   );
   const [isPublicSession, setIsPublicSession] = useState(false);
   const [hasForked, setHasForked] = useState(false);
-  const [skipNextLoad, setSkipNextLoad] = useState(false); // Skip loading after fork
+  const [skipNextLoad, setSkipNextLoad] = useState(false);
 
-  // Debug: Log when component mounts/unmounts
   useEffect(() => {
     console.log("ChatInterface mounted with sessionId:", sessionId);
     return () => {
@@ -401,19 +401,16 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
       if (data.session_id && data.session_id !== currentSessionId) {
         setCurrentSessionId(data.session_id);
 
-        // For anonymous sessions, update URL without navigation
         if (
           data.session_id.startsWith("anon-") ||
           data.session_id.startsWith("temp-")
         ) {
-          console.log(
-            "Anonymous session created, updating URL without navigation"
-          );
-          window.history.replaceState({}, "", `/chat/${data.session_id}`);
-          setSkipNextLoad(true); // Skip the next load effect
-        } else if (onNewSession) {
-          // For logged-in users with persistent sessions, update sidebar
-          onNewSession(data.session_id, false); // Don't navigate, just update sidebar
+          navigate(`/chat/${data.session_id}`, { replace: true });
+        } else {
+          navigate(`/chat/${data.session_id}`, { replace: true });
+          if (onNewSession) {
+            onNewSession(data.session_id, false);
+          }
         }
       } else if (
         data.session_id &&
@@ -421,7 +418,6 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
         !data.session_id.startsWith("anon-") &&
         !data.session_id.startsWith("temp-")
       ) {
-        // Session exists but title might have been updated, refresh sidebar
         onNewSession(data.session_id, false);
       }
 

@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { AuthForm } from "@/components/auth-form";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -52,8 +53,8 @@ function AppContent() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Handle new session - navigate only if we're not already on a chat page
   const handleNewSession = (
     sessionId: string,
     shouldNavigate: boolean = true
@@ -61,7 +62,7 @@ function AppContent() {
     if (shouldNavigate) {
       navigate(`/chat/${sessionId}`);
     }
-    // If not navigating, the session list will refresh automatically
+    setRefreshTrigger((prev) => prev + 1);
   };
 
   if (loading) {
@@ -189,10 +190,8 @@ function AppContent() {
       <TopBar />
 
       <div className="flex-1 flex overflow-hidden pt-14">
-        {/* Sidebar for logged-in users */}
-        <SessionsSidebar />
+        <SessionsSidebar refreshTrigger={refreshTrigger} />
 
-        {/* Main chat area - Use location.pathname as key to force remount on route change */}
         <div className="flex-1 overflow-hidden">
           <Routes>
             <Route

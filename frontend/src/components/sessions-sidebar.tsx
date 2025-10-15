@@ -24,7 +24,11 @@ interface Session {
   updated_at: string;
 }
 
-export function SessionsSidebar() {
+interface SessionsSidebarProps {
+  refreshTrigger?: number;
+}
+
+export function SessionsSidebar({ refreshTrigger }: SessionsSidebarProps = {}) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -56,10 +60,8 @@ export function SessionsSidebar() {
     }
   }, [user]);
 
-  // Refresh sessions when URL changes (e.g., after forking)
   useEffect(() => {
     if (user && sessionId) {
-      // Slight delay to ensure backend has updated
       const timer = setTimeout(() => {
         fetchSessions();
       }, 500);
@@ -67,22 +69,25 @@ export function SessionsSidebar() {
     }
   }, [sessionId, user]);
 
+  useEffect(() => {
+    if (user && refreshTrigger !== undefined && refreshTrigger > 0) {
+      const timer = setTimeout(() => {
+        fetchSessions();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [refreshTrigger, user]);
+
   const createNewSession = async () => {
-    console.log(
-      "Creating new session - current path:",
-      window.location.pathname
-    );
+    const currentPath = window.location.pathname;
 
-    // Navigate to home and force a clean state
-    navigate("/", { replace: true });
+    if (currentPath === "/") {
+      window.location.reload();
+    } else {
+      navigate("/", { replace: true });
+    }
 
-    console.log("Navigated to home - new path:", window.location.pathname);
-
-    // Small delay to ensure navigation completes
-    setTimeout(() => {
-      toast.success("Started new chat");
-      console.log("Toast shown - final path:", window.location.pathname);
-    }, 100);
+    toast.success("Started new chat");
   };
 
   const openDeleteDialog = (session: Session, e: React.MouseEvent) => {
