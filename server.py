@@ -61,6 +61,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     output: str
     session_id: str
+    title: Optional[str] = None
 
 class SessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
@@ -440,6 +441,8 @@ async def chat(
         agent_executor = create_agent_with_memory(memory)
         response = agent_executor.invoke({"text": request.text})
         
+        generated_title = None
+        
         # Save assistant response (only for database sessions)
         if use_database:
             try:
@@ -447,15 +450,27 @@ async def chat(
                 
                 # Auto-generate title from first message if still "New Chat"
                 session = await supabase_session_manager.get_session(session_id, current_user["id"])
+                print(f"Session after response: {session}")
+                
                 if session and session["title"] == "New Chat":
+                    print(f"Generating title for session {session_id}...")
                     new_title = await supabase_session_manager.generate_session_title(session_id)
+                    print(f"Generated title: {new_title}")
+                    
                     await supabase_session_manager.update_session(session_id, current_user["id"], title=new_title)
+                    generated_title = new_title
+                else:
+                    generated_title = session.get("title") if session else None
+                    
             except Exception as e:
-                print(f"Could not save to database: {e}")
+                print(f"Could not save to database or generate title: {e}")
+                import traceback
+                traceback.print_exc()
         
         return ChatResponse(
             output=response["output"],
-            session_id=session_id
+            session_id=session_id,
+            title=generated_title
         )
     
     except HTTPException:

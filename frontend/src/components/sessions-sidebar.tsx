@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Plus, Trash2, Globe, Lock } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Globe, Lock, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useParams } from "react-router";
 import { authenticatedFetch } from "@/lib/api";
@@ -30,7 +30,7 @@ export function SessionsSidebar() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [publicDialogOpen, setPublicDialogOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { sessionId } = useParams();
 
@@ -68,8 +68,21 @@ export function SessionsSidebar() {
   }, [sessionId, user]);
 
   const createNewSession = async () => {
-    navigate("/");
-    toast.success("Started new chat");
+    console.log(
+      "Creating new session - current path:",
+      window.location.pathname
+    );
+
+    // Navigate to home and force a clean state
+    navigate("/", { replace: true });
+
+    console.log("Navigated to home - new path:", window.location.pathname);
+
+    // Small delay to ensure navigation completes
+    setTimeout(() => {
+      toast.success("Started new chat");
+      console.log("Toast shown - final path:", window.location.pathname);
+    }, 100);
   };
 
   const openDeleteDialog = (session: Session, e: React.MouseEvent) => {
@@ -137,14 +150,6 @@ export function SessionsSidebar() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="w-56 border-r bg-card/50 p-3">
-        <p className="text-xs text-muted-foreground">Loading...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="w-56 border-r bg-card/50 flex flex-col h-full">
       {/* New Chat Button - Compact */}
@@ -161,7 +166,11 @@ export function SessionsSidebar() {
 
       {/* Sessions List - Minimal */}
       <div className="flex-1 overflow-y-auto px-2 py-1">
-        {sessions.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-4">
+            <p className="text-xs text-muted-foreground">Loading chats...</p>
+          </div>
+        ) : sessions.length === 0 ? (
           <div className="text-center py-8 px-2">
             <MessageSquare className="h-6 w-6 mx-auto mb-2 text-muted-foreground/50" />
             <p className="text-xs text-muted-foreground">No chats</p>
@@ -178,7 +187,10 @@ export function SessionsSidebar() {
               >
                 <div className="flex items-center gap-2 pr-12">
                   <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                  <p className="text-xs font-medium truncate">
+                  <p
+                    className="text-xs font-medium truncate"
+                    title={session.title}
+                  >
                     {session.title}
                   </p>
                 </div>
@@ -211,6 +223,31 @@ export function SessionsSidebar() {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Account Section at Bottom - Ultra Minimal & Sleek */}
+      <div className="border-t p-3 space-y-2.5">
+        {user && (
+          <>
+            {/* User Email - Clean Typography */}
+            <div className="px-2.5 py-2 text-xs font-medium text-muted-foreground truncate">
+              {user.email}
+            </div>
+            {/* Sign Out - Subtle Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              onClick={() => {
+                signOut();
+                toast.success("Signed out successfully");
+              }}
+            >
+              <LogOut className="h-3.5 w-3.5 mr-2" />
+              Sign Out
+            </Button>
+          </>
         )}
       </div>
 

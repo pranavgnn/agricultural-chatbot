@@ -181,15 +181,45 @@ class SupabaseSessionManager:
             del self._memory_cache[session_id]
     
     async def generate_session_title(self, session_id: str) -> str:
-        """Generate a title from the first user message"""
-        messages = await self.get_messages(session_id, limit=1)
-        if messages and messages[0]["role"] == "user":
-            content = messages[0]["content"]
-            # Take first 50 chars or first sentence
-            title = content[:50].split('.')[0].strip()
-            if len(content) > 50:
-                title += "..."
-            return title
+        """Generate a concise, descriptive title from the first user message using LangChain"""
+        messages = None
+        try:
+            print(f"[TITLE] Fetching messages for session {session_id}...")
+            # Get ALL messages and find the first user message
+            all_messages = await self.get_messages(session_id, limit=None)
+            print(f"[TITLE] Got {len(all_messages) if all_messages else 0} total messages")
+            
+            # Find the first user message
+            user_message = None
+            for msg in all_messages:
+                if msg["role"] == "user":
+                    user_message = msg
+                    break
+            
+            if user_message:
+                from title_generator import generate_chat_title
+                content = user_message["content"]
+                
+                print(f"[TITLE] Calling title generator with content: {content[:100]}...")
+                # Use LangChain to generate a smart title
+                title = generate_chat_title(content)
+                print(f"[TITLE] Title generator returned: {title}")
+                return title
+            else:
+                print("[TITLE] No user messages found in session")
+        except Exception as e:
+            print(f"[TITLE] Error generating title: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback to simple truncation if we have a user message
+            if user_message:
+                content = user_message["content"]
+                title = content[:50].split('.')[0].strip()
+                if len(content) > 50:
+                    title += "..."
+                return title
+        
+        print("[TITLE] Returning default 'New Chat'")
         return "New Chat"
 
 # Global session manager instance

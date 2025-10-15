@@ -6,36 +6,33 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { AuthForm } from "@/components/auth-form";
 import { Button } from "@/components/ui/button";
-import { LogOut, Loader2 } from "lucide-react";
-import { BrowserRouter, Routes, Route, useNavigate } from "react-router";
+import { Loader2 } from "lucide-react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useNavigate,
+  useLocation,
+} from "react-router";
 
 // Consistent top bar for all pages
 function TopBar() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   return (
     <div className="fixed top-0 left-0 right-0 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-50">
       <div className="flex items-center justify-between h-full px-4">
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => navigate("/")}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+        >
+          <span className="text-2xl">🌾</span>
           <h1 className="text-xl font-bold text-primary">Kheti</h1>
-          <span className="text-xs text-muted-foreground hidden sm:inline">
-            Agricultural AI Assistant
-          </span>
-        </div>
+        </button>
 
         <div className="flex items-center gap-2">
-          {user ? (
-            <>
-              <span className="text-sm text-muted-foreground hidden md:inline">
-                {user.email}
-              </span>
-              <Button variant="ghost" size="sm" onClick={signOut}>
-                <LogOut className="h-4 w-4" />
-                <span className="ml-2 hidden sm:inline">Sign Out</span>
-              </Button>
-            </>
-          ) : (
+          {!user && (
             <Button
               variant="default"
               size="sm"
@@ -54,6 +51,7 @@ function TopBar() {
 function AppContent() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Handle new session - navigate only if we're not already on a chat page
   const handleNewSession = (
@@ -89,7 +87,10 @@ function AppContent() {
               <div className="h-screen flex flex-col bg-background">
                 <TopBar />
                 <div className="flex-1 overflow-hidden pt-14">
-                  <ChatInterface onNewSession={handleNewSession} />
+                  <ChatInterface
+                    key={location.pathname}
+                    onNewSession={handleNewSession}
+                  />
                 </div>
                 <Toaster />
               </div>
@@ -103,7 +104,10 @@ function AppContent() {
               <div className="h-screen flex flex-col bg-background">
                 <TopBar />
                 <div className="flex-1 overflow-hidden pt-14">
-                  <ChatInterface onNewSession={handleNewSession} />
+                  <ChatInterface
+                    key={location.pathname}
+                    onNewSession={handleNewSession}
+                  />
                 </div>
                 <Toaster />
               </div>
@@ -165,7 +169,10 @@ function AppContent() {
               <div className="h-screen flex flex-col bg-background">
                 <TopBar />
                 <div className="flex-1 overflow-hidden pt-14">
-                  <ChatInterface onNewSession={handleNewSession} />
+                  <ChatInterface
+                    key={location.pathname}
+                    onNewSession={handleNewSession}
+                  />
                 </div>
                 <Toaster />
               </div>
@@ -185,25 +192,45 @@ function AppContent() {
         {/* Sidebar for logged-in users */}
         <SessionsSidebar />
 
-        {/* Main chat area */}
+        {/* Main chat area - Use location.pathname as key to force remount on route change */}
         <div className="flex-1 overflow-hidden">
           <Routes>
             <Route
               path="/"
-              element={<ChatInterface onNewSession={handleNewSession} />}
+              element={
+                <ChatInterface
+                  key={location.pathname}
+                  onNewSession={handleNewSession}
+                />
+              }
             />
             <Route
               path="/chat/:sessionId"
-              element={<ChatInterface onNewSession={handleNewSession} />}
+              element={
+                <ChatInterface
+                  key={location.pathname}
+                  onNewSession={handleNewSession}
+                />
+              }
             />
             <Route
               path="/login"
-              element={<ChatInterface onNewSession={handleNewSession} />}
+              element={
+                <ChatInterface
+                  key={location.pathname}
+                  onNewSession={handleNewSession}
+                />
+              }
             />
             {/* Catch-all: redirect to home */}
             <Route
               path="*"
-              element={<ChatInterface onNewSession={handleNewSession} />}
+              element={
+                <ChatInterface
+                  key={location.pathname}
+                  onNewSession={handleNewSession}
+                />
+              }
             />
           </Routes>
         </div>

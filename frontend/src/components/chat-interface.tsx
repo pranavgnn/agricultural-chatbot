@@ -41,6 +41,14 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
   const [hasForked, setHasForked] = useState(false);
   const [skipNextLoad, setSkipNextLoad] = useState(false); // Skip loading after fork
 
+  // Debug: Log when component mounts/unmounts
+  useEffect(() => {
+    console.log("ChatInterface mounted with sessionId:", sessionId);
+    return () => {
+      console.log("ChatInterface unmounting");
+    };
+  }, []);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -85,10 +93,13 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
       setShowSuggestions(false);
       loadSessionMessages(sessionId);
     } else {
-      // No session selected, show suggestions
+      // No session selected, reset everything and show suggestions
+      console.log("No sessionId in URL, resetting to new chat");
       setMessages([]);
       setShowSuggestions(true);
       setCurrentSessionId(null);
+      setIsPublicSession(false);
+      setHasForked(false);
     }
   }, [sessionId]);
 
@@ -401,9 +412,17 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
           window.history.replaceState({}, "", `/chat/${data.session_id}`);
           setSkipNextLoad(true); // Skip the next load effect
         } else if (onNewSession) {
-          // For logged-in users with persistent sessions, navigate
+          // For logged-in users with persistent sessions, update sidebar
           onNewSession(data.session_id, false); // Don't navigate, just update sidebar
         }
+      } else if (
+        data.session_id &&
+        onNewSession &&
+        !data.session_id.startsWith("anon-") &&
+        !data.session_id.startsWith("temp-")
+      ) {
+        // Session exists but title might have been updated, refresh sidebar
+        onNewSession(data.session_id, false);
       }
 
       const botMessage: Message = {

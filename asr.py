@@ -28,7 +28,7 @@ def transcribe_audio(audio_data: bytes, mime_type: str = "audio/webm") -> str:
     
     # Initialize Gemini model with structured output
     model = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash-exp",
+        model="gemini-2.0-flash-lite",
         api_key=os.environ.get("GOOGLE_API_KEY"),
     )
     
