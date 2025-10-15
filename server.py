@@ -132,6 +132,29 @@ async def auth_callback():
     """OAuth callback endpoint"""
     return RedirectResponse(url="/?auth=success")
 
+# ASR (Speech-to-Text) Endpoint
+@app.post("/asr/transcribe")
+async def transcribe_audio_endpoint(audio: UploadFile = File(...)):
+    """Transcribe audio file using Gemini ASR with structured output"""
+    try:
+        # Read the uploaded audio file
+        audio_data = await audio.read()
+        
+        # Import the ASR module
+        from asr import transcribe_audio
+        
+        # Get transcription using LangChain structured output
+        transcription = transcribe_audio(
+            audio_data=audio_data,
+            mime_type=audio.content_type or "audio/webm"
+        )
+        
+        return {"transcription": transcription, "success": True}
+    
+    except Exception as e:
+        print(f"Error transcribing audio: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
+
 # Chat Session Endpoints
 @app.post("/chat/sessions")
 async def create_chat_session(

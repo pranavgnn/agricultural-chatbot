@@ -28,9 +28,11 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
   const [isBotThinking, setIsBotThinking] = useState(false); // Bot is generating response
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const { sessionId } = useParams();
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(
     sessionId || null
@@ -188,74 +190,87 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
     }
   }, []);
 
-  // Initialize speech recognition
-  useEffect(() => {
-    // Check if browser supports Web Speech API
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+  // Voice recording handlers
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
 
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = "en-IN"; // English (India), supports code-switching with Hindi
+      audioChunksRef.current = [];
 
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInput(transcript);
-        setIsRecording(false);
-        toast.success("Speech recognized!");
-
-        // Automatically send the transcribed message
-        setTimeout(() => {
-          sendMessage(transcript);
-        }, 100);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
-        setIsRecording(false);
-
-        if (event.error === "no-speech") {
-          toast.error("No speech detected. Please try again.");
-        } else if (event.error === "not-allowed") {
-          toast.error("Microphone access denied. Please grant permission.");
-        } else {
-          toast.error("Speech recognition failed. Please try again.");
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
       };
 
-      recognition.onend = () => {
-        setIsRecording(false);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: "audio/webm",
+        });
+        await transcribeAudio(audioBlob);
+
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach((track) => track.stop());
       };
 
-      recognitionRef.current = recognition;
-    }
-  }, []);
-
-  const startRecording = () => {
-    if (!recognitionRef.current) {
-      toast.error(
-        "Speech recognition not supported in this browser. Try Chrome or Edge."
-      );
-      return;
-    }
-
-    try {
-      recognitionRef.current.start();
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
       setIsRecording(true);
-      toast.info("Listening... Speak now!");
+      toast.info("Recording... Click again to stop");
     } catch (error) {
-      console.error("Error starting recognition:", error);
-      toast.error("Failed to start speech recognition.");
+      console.error("Error starting recording:", error);
+      toast.error("Failed to access microphone");
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current && isRecording) {
-      recognitionRef.current.stop();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+  };
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+    setIsTranscribing(true);
+    toast.info("Transcribing audio...");
+
+    try {
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "recording.webm");
+
+      const response = await fetch("/asr/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Transcription failed");
+      }
+
+      const data = await response.json();
+      const transcription = data.transcription;
+
+      setInput(transcription);
+      toast.success("Audio transcribed!");
+
+      // Automatically send the transcribed message
+      setTimeout(() => {
+        sendMessage(transcription);
+      }, 100);
+    } catch (error) {
+      console.error("Error transcribing audio:", error);
+      toast.error("Failed to transcribe audio");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
     }
   };
 
@@ -374,8 +389,20 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
       // Update session ID if it changed (new session created)
       if (data.session_id && data.session_id !== currentSessionId) {
         setCurrentSessionId(data.session_id);
-        if (onNewSession) {
-          onNewSession(data.session_id);
+
+        // For anonymous sessions, update URL without navigation
+        if (
+          data.session_id.startsWith("anon-") ||
+          data.session_id.startsWith("temp-")
+        ) {
+          console.log(
+            "Anonymous session created, updating URL without navigation"
+          );
+          window.history.replaceState({}, "", `/chat/${data.session_id}`);
+          setSkipNextLoad(true); // Skip the next load effect
+        } else if (onNewSession) {
+          // For logged-in users with persistent sessions, navigate
+          onNewSession(data.session_id, false); // Don't navigate, just update sidebar
         }
       }
 
@@ -664,15 +691,17 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
             {/* Microphone Button */}
             <Button
               type="button"
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={isBotThinking}
+              onClick={toggleRecording}
+              disabled={isBotThinking || isTranscribing}
               size="icon"
               variant={isRecording ? "destructive" : "secondary"}
               className={`h-11 w-11 rounded-lg ${
-                isRecording ? "animate-pulse" : ""
+                isRecording || isTranscribing ? "animate-pulse" : ""
               }`}
             >
-              {isRecording ? (
+              {isTranscribing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isRecording ? (
                 <MicOff className="h-4 w-4" />
               ) : (
                 <Mic className="h-4 w-4" />
@@ -682,7 +711,9 @@ export function ChatInterface({ onNewSession }: ChatInterfaceProps = {}) {
             {/* Send Button */}
             <Button
               type="submit"
-              disabled={isBotThinking || !input.trim() || isRecording}
+              disabled={
+                isBotThinking || !input.trim() || isRecording || isTranscribing
+              }
               size="icon"
               className="h-11 w-11 rounded-lg"
             >
